@@ -1,0 +1,52 @@
+name: SSH into VPS and deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    name: Deploy over SSH
+
+    steps:
+      - name: Deploy project over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+
+          script: |
+            set -e
+
+            # 1. Trust repository directory
+            git config --global --add safe.directory /var/www/baga.shynkent.ovh
+
+            cd /var/www/baga.shynkent.ovh
+
+            # 2. Put application into maintenance mode
+            php artisan down || true
+
+            # 3. Pull latest changes from main
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
+
+            # 4. Install production dependencies
+            composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+
+            # 5. Run database migrations
+            php artisan migrate --force
+
+            # 6. Clear and cache configuration, routes, and views
+            php artisan optimize:clear
+            php artisan optimize
+            php artisan view:cache
+
+            # 7. Bring application back online
+            php artisan up
+
+            echo "Deployment completed successfully."
